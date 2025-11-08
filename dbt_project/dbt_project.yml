@@ -1,0 +1,54 @@
+name: 'loan_default_prediction'
+version: '1.0.0'
+config-version: 2
+
+profile: 'loan_default_prediction'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  loan_default_prediction:
+    # Staging models - clean and standardize raw data
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags:
+        - "staging"
+
+    # Intermediate models - feature calculations
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+      +tags:
+        - "intermediate"
+
+    # Marts - business-ready datasets
+    marts:
+      +materialized: table
+      +schema: marts
+      +tags:
+        - "marts"
+
+vars:
+  # Define default rate threshold for binary classification
+  default_threshold: 0.5
+
+  # Loan statuses considered as defaults
+  default_statuses:
+    - 'Charged Off'
+    - 'Default'
+    - 'Does not meet the credit policy. Status:Charged Off'
+
+  # Loan statuses considered as non-defaults (fully paid)
+  paid_statuses:
+    - 'Fully Paid'
+    - 'Does not meet the credit policy. Status:Fully Paid'

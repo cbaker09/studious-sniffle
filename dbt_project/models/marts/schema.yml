@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: mart_ml_training
+    description: Final ML training dataset with all features and target variable
+    columns:
+      - name: loan_id
+        description: Unique loan identifier
+        tests:
+          - unique
+          - not_null
+
+      - name: is_default
+        description: Target variable - 1 if loan defaulted, 0 if paid
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+
+      - name: fico_score_avg
+        description: Average FICO score
+        tests:
+          - not_null
+
+      - name: loan_amount
+        description: Original loan amount
+        tests:
+          - not_null
+
+      - name: annual_income
+        description: Borrower annual income
+        tests:
+          - not_null

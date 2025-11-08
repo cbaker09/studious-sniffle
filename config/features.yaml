@@ -1,0 +1,201 @@
+# Feature Definitions for Loan Default Prediction
+
+# Target variable
+target:
+  name: "is_default"
+  description: "Binary indicator of loan default (1=default, 0=paid)"
+  type: "binary"
+
+# Feature groups
+feature_groups:
+  # Loan characteristics
+  loan_features:
+    - loan_amount
+    - funded_amount
+    - interest_rate
+    - installment
+    - grade_numeric
+    - term_months
+    - loan_to_income_ratio
+    - payment_burden_ratio
+
+  # Borrower demographics
+  borrower_features:
+    - annual_income
+    - employment_years
+    - is_homeowner
+    - is_income_verified
+
+  # Credit scores
+  credit_score_features:
+    - fico_score_avg
+    - fico_range_low
+    - fico_range_high
+
+  # Debt metrics
+  debt_features:
+    - debt_to_income
+    - revolving_balance
+    - revolving_utilization
+    - total_balance_ex_mortgage
+    - installment_utilization
+    - total_balance_installment
+
+  # Credit history
+  credit_history_features:
+    - credit_history_years
+    - delinquencies_2yrs
+    - months_since_last_delinquency
+    - accounts_now_delinquent
+    - num_accounts_ever_120days_past_due
+    - num_tradelines_30days_past_due
+    - num_tradelines_90days_past_due_24months
+    - pct_tradelines_never_delinquent
+
+  # Inquiries
+  inquiry_features:
+    - inquiries_last_6months
+    - inquiries_last_12months
+    - inquiries_financial_institutions
+
+  # Accounts
+  account_features:
+    - open_accounts
+    - total_accounts
+    - mortgage_accounts
+    - account_open_ratio
+    - accounts_opened_past_24months
+    - num_tradelines_opened_past_12months
+
+  # Public records
+  public_record_features:
+    - public_records
+    - public_record_bankruptcies
+    - tax_liens
+
+  # Bank card metrics
+  bank_card_features:
+    - bank_card_utilization
+    - num_bank_card_tradelines
+    - num_active_bank_card_tradelines
+    - total_bank_card_limit
+    - percent_bank_card_gt_75
+
+  # Collections and hardship
+  risk_indicator_features:
+    - collections_12months_ex_medical
+    - total_collection_amount
+    - hardship_flag
+    - settlement_status
+
+  # Loan purpose
+  purpose_features:
+    - is_debt_consolidation
+
+  # Customer history
+  customer_history_features:
+    - customer_total_loans
+    - customer_total_defaults
+    - customer_historical_default_rate
+    - customer_total_borrowed
+    - customer_avg_loan_amount
+    - customer_tenure_months
+
+# Feature importance groups (expected high predictors)
+high_importance_features:
+  - fico_score_avg
+  - debt_to_income
+  - interest_rate
+  - grade_numeric
+  - annual_income
+  - delinquencies_2yrs
+  - revolving_utilization
+  - inquiries_last_6months
+  - public_record_bankruptcies
+  - customer_historical_default_rate
+
+# Feature engineering rules
+feature_engineering:
+  # Derived features
+  derived:
+    loan_to_income_ratio:
+      formula: "loan_amount / annual_income"
+      description: "Loan amount as proportion of annual income"
+
+    payment_burden_ratio:
+      formula: "(installment * 12) / annual_income"
+      description: "Annual payment burden as proportion of income"
+
+    credit_history_years:
+      formula: "(issue_date - earliest_credit_line) / 365.25"
+      description: "Length of credit history in years"
+
+    account_open_ratio:
+      formula: "open_accounts / total_accounts"
+      description: "Proportion of accounts that are open"
+
+    grade_numeric:
+      formula: "Convert grade A-G to 1-7"
+      description: "Numeric encoding of loan grade"
+
+  # Interaction features (future enhancement)
+  interactions:
+    - feature1: "fico_score_avg"
+      feature2: "debt_to_income"
+      operation: "multiply"
+
+    - feature1: "loan_amount"
+      feature2: "interest_rate"
+      operation: "multiply"
+
+# Missing value handling
+missing_values:
+  # Features where missing might be informative
+  informative_missing:
+    - months_since_last_delinquency  # Missing means no delinquency
+    - months_since_last_public_record  # Missing means no public record
+
+  # Imputation strategies
+  strategies:
+    median:
+      - loan_amount
+      - annual_income
+      - debt_to_income
+      - fico_score_avg
+
+    mode:
+      - employment_years
+      - home_ownership
+
+    zero:
+      - delinquencies_2yrs
+      - public_records
+      - collections_12months_ex_medical
+
+# Feature validation rules
+validation:
+  # Range checks
+  ranges:
+    loan_amount:
+      min: 500
+      max: 40000
+
+    interest_rate:
+      min: 5
+      max: 30
+
+    fico_score_avg:
+      min: 300
+      max: 850
+
+    debt_to_income:
+      min: 0
+      max: 100
+
+  # Required features
+  required:
+    - loan_amount
+    - interest_rate
+    - fico_score_avg
+    - annual_income
+    - debt_to_income

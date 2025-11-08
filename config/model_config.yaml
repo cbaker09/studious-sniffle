@@ -1,0 +1,118 @@
+# Model Configuration for Loan Default Prediction
+
+# Data paths
+data:
+  database: "data/loan_default.duckdb"
+  training_table: "marts.mart_ml_training"
+  raw_data_dir: "data/raw"
+  processed_data_dir: "data/processed"
+
+# Feature engineering
+features:
+  # Numeric features to scale
+  numeric_features:
+    - loan_amount
+    - funded_amount
+    - interest_rate
+    - installment
+    - annual_income
+    - debt_to_income
+    - revolving_balance
+    - revolving_utilization
+    - fico_score_avg
+    - credit_history_years
+    - loan_to_income_ratio
+    - payment_burden_ratio
+
+  # Categorical features to encode
+  categorical_features:
+    - grade
+    - sub_grade
+    - loan_purpose
+    - home_ownership
+    - verification_status
+    - hardship_flag
+    - settlement_status
+
+  # Features to exclude from modeling
+  exclude_features:
+    - loan_id
+    - member_id
+    - issue_date
+    - loan_status
+
+# Model parameters
+models:
+  logistic_regression:
+    max_iter: 1000
+    random_state: 42
+    class_weight: "balanced"
+    solver: "lbfgs"
+
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 100
+    min_samples_leaf: 50
+    random_state: 42
+    n_jobs: -1
+    class_weight: "balanced"
+
+  xgboost:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    random_state: 42
+    n_jobs: -1
+    eval_metric: "auc"
+
+  lightgbm:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    random_state: 42
+    n_jobs: -1
+    verbose: -1
+
+# Training parameters
+training:
+  test_size: 0.2
+  random_state: 42
+  use_time_split: true  # Use temporal split instead of random
+  stratify: true
+
+# Evaluation metrics
+evaluation:
+  primary_metric: "auc"  # Used to select best model
+  metrics:
+    - auc
+    - gini
+    - precision
+    - recall
+    - f1
+
+  # Thresholds for classification
+  decision_threshold: 0.5
+
+  # Risk levels
+  risk_thresholds:
+    very_low: 0.2
+    low: 0.4
+    medium: 0.6
+    high: 0.8
+
+# Output paths
+output:
+  models_dir: "outputs/models"
+  metrics_dir: "outputs/metrics"
+  reports_dir: "outputs/reports"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "outputs/logs/training.log"
