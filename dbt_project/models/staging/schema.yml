@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: stg_loans
+    description: Cleaned and standardized loan data from the Lending Club dataset
+    columns:
+      - name: loan_id
+        description: Unique identifier for each loan
+        tests:
+          - unique
+          - not_null
+
+      - name: loan_amount
+        description: The listed amount of the loan applied for
+        tests:
+          - not_null
+
+      - name: interest_rate
+        description: Interest rate on the loan
+        tests:
+          - not_null
+
+      - name: loan_status
+        description: Current status of the loan
+        tests:
+          - not_null
+
+      - name: is_default
+        description: Binary indicator (1=default, 0=paid)
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+
+      - name: fico_score_avg
+        description: Average of FICO range low and high
+        tests:
+          - not_null
+
+      - name: annual_income
+        description: Self-reported annual income
+        tests:
+          - not_null
+
+      - name: debt_to_income
+        description: Debt-to-income ratio
