@@ -5,7 +5,7 @@
 }}
 
 with source_data as (
-    select * from loans
+    select * from raw.loans
 ),
 
 cleaned as (

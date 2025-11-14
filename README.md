@@ -5,6 +5,7 @@ A comprehensive end-to-end machine learning system for predicting loan defaults 
 ## Project Overview
 
 This project demonstrates a production-ready approach to loan default prediction, incorporating:
+- **PostgreSQL**: Robust relational database for data storage
 - **SQL**: Data extraction and initial transformations
 - **dbt**: Modular data transformations, testing, and documentation
 - **Python**: Feature engineering, ML modeling, and evaluation
@@ -180,40 +181,137 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Download Data
-- Download Lending Club dataset from Kaggle
-- Place in `data/raw/` directory
+### 2. PostgreSQL Database Setup
 
-### 3. Database Setup
+This project uses PostgreSQL for data storage. We provide a Docker Compose configuration for easy local setup.
+
+#### Option A: Using Docker (Recommended)
+
 ```bash
-# For local development, we'll use DuckDB (SQLite alternative)
-# Or set up PostgreSQL if you prefer a production-like environment
+# Start PostgreSQL container
+docker-compose up -d
+
+# Verify PostgreSQL is running
+docker-compose ps
+
+# View logs if needed
+docker-compose logs postgres
 ```
 
-### 4. dbt Setup
+The database will be available at:
+- **Host**: localhost
+- **Port**: 5432
+- **Database**: loan_default
+- **User**: loan_user
+- **Password**: loan_password
+
+#### Option B: Local PostgreSQL Installation
+
+If you prefer to use a local PostgreSQL installation:
+
+1. Install PostgreSQL 15+ on your system
+2. Create a database and user:
+```sql
+CREATE DATABASE loan_default;
+CREATE USER loan_user WITH PASSWORD 'loan_password';
+GRANT ALL PRIVILEGES ON DATABASE loan_default TO loan_user;
+```
+
+3. Update the `.env` file with your connection details
+
+#### Environment Variables
+
+The project uses a `.env` file for database configuration. A sample file is provided:
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env if you need to change the default settings
+```
+
+Default configuration:
+```
+POSTGRES_DB=loan_default
+POSTGRES_USER=loan_user
+POSTGRES_PASSWORD=loan_password
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+```
+
+### 3. Download Data
+- Download Lending Club dataset from [Kaggle](https://www.kaggle.com/datasets/wordsforthewise/lending-club)
+- Place the CSV file in `data/raw/` directory
+- Expected filename: `loan.csv` or `accepted_2007_to_2018.csv`
+
+### 4. Load Data into PostgreSQL
+```bash
+# Run the data loader
+python src/data/data_loader.py
+
+# This will:
+# - Connect to PostgreSQL
+# - Load CSV data in chunks
+# - Create tables in the 'raw' schema
+# - Validate the loaded data
+```
+
+### 5. dbt Setup
 ```bash
 cd dbt_project
-dbt deps
-dbt seed
+
+# Run dbt models to create staging, intermediate, and marts tables
 dbt run
+
+# Run tests to validate data quality
 dbt test
+
+# Generate documentation (optional)
+dbt docs generate
+dbt docs serve
 ```
 
-### 5. Run ML Pipeline
+### 6. Run ML Pipeline
 ```bash
-python src/models/train.py --config config/model_config.yaml
+# Train models
+python src/models/train.py
+
+# This will:
+# - Load data from the marts.mart_ml_training table
+# - Train multiple ML models (Logistic Regression, Random Forest, XGBoost, LightGBM)
+# - Evaluate and compare model performance
+# - Save the best model to outputs/models/
 ```
+
+### 7. Stopping the Database
+```bash
+# Stop PostgreSQL container
+docker-compose down
+
+# Stop and remove data (caution: deletes all data!)
+docker-compose down -v
+```
+
+## Database Schema
+
+The project uses a multi-schema approach for data organization:
+
+- **raw**: Raw data loaded from CSV files
+- **staging**: Cleaned and standardized data (dbt views)
+- **intermediate**: Feature engineering and calculations (dbt views)
+- **marts**: Business-ready datasets for ML (dbt tables)
+
+This follows the medallion architecture pattern commonly used in modern data platforms.
 
 ## Next Steps
 
-1. **Data Acquisition**: Download Lending Club dataset
-2. **Database Setup**: Initialize DuckDB or PostgreSQL
-3. **dbt Models**: Build staging → intermediate → marts
-4. **Feature Engineering**: Create domain-specific features
-5. **Model Training**: Implement multiple algorithms
-6. **Model Evaluation**: Compare performance and business impact
-7. **API Development**: Create prediction endpoint
-8. **Monitoring**: Track model performance over time
+1. ✅ **Database Setup**: PostgreSQL with Docker
+2. ✅ **Data Pipeline**: dbt models (staging → intermediate → marts)
+3. ✅ **ML Models**: Multiple algorithms implemented
+4. **Model Tuning**: Hyperparameter optimization
+5. **API Development**: Create prediction endpoint with FastAPI
+6. **Monitoring**: Track model performance over time
+7. **Deployment**: Containerize and deploy to cloud
 
 ## Advanced Extensions
 

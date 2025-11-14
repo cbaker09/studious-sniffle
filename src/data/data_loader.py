@@ -2,66 +2,78 @@
 """
 Data Loader for Loan Default Prediction System
 
-This script loads the Lending Club CSV data into a DuckDB database.
+This script loads the Lending Club CSV data into a PostgreSQL database.
 It handles large files with chunked reading and provides data validation.
 """
 
 import os
 import sys
 from pathlib import Path
-import duckdb
+from dotenv import load_dotenv
 import pandas as pd
+from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+# Load environment variables
+load_dotenv()
+
 
 class LoanDataLoader:
-    """Handles loading loan data from CSV to DuckDB"""
+    """Handles loading loan data from CSV to PostgreSQL"""
 
-    def __init__(self, db_path: str = "data/loan_default.duckdb"):
+    def __init__(self, database_url: str = None):
         """
         Initialize the data loader
 
         Args:
-            db_path: Path to DuckDB database file
+            database_url: PostgreSQL database URL (defaults to DATABASE_URL env var)
         """
-        self.db_path = db_path
+        self.database_url = database_url or os.getenv(
+            'DATABASE_URL',
+            'postgresql://loan_user:loan_password@localhost:5432/loan_default'
+        )
+        self.engine = None
         self.conn = None
 
     def connect(self):
-        """Establish connection to DuckDB"""
-        print(f"Connecting to DuckDB at: {self.db_path}")
-        self.conn = duckdb.connect(self.db_path)
+        """Establish connection to PostgreSQL"""
+        print(f"Connecting to PostgreSQL database...")
+        self.engine = create_engine(self.database_url)
+        self.conn = self.engine.connect()
         print("✓ Connected to database")
 
     def load_csv_to_table(
         self,
         csv_path: str,
         table_name: str = "loans",
-        chunk_size: int = 50000
+        chunk_size: int = 50000,
+        schema: str = "raw"
     ):
         """
-        Load CSV file into DuckDB table with chunked reading
+        Load CSV file into PostgreSQL table with chunked reading
 
         Args:
             csv_path: Path to CSV file
             table_name: Name of target table
             chunk_size: Number of rows per chunk
+            schema: Database schema (default: 'raw')
         """
         if not os.path.exists(csv_path):
             raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
         print(f"\nLoading CSV from: {csv_path}")
-        print(f"Target table: {table_name}")
+        print(f"Target table: {schema}.{table_name}")
 
         # Get total rows for progress bar
         total_rows = sum(1 for _ in open(csv_path)) - 1  # Subtract header
         print(f"Total rows to load: {total_rows:,}")
 
         # Drop table if exists
-        self.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+        self.conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{table_name} CASCADE"))
+        self.conn.commit()
 
         # Read and load in chunks
         chunk_count = 0
@@ -83,34 +95,37 @@ class LoanDataLoader:
                 for col in chunk.columns
             ]
 
-            # Create or append to table
-            if chunk_count == 1:
-                # First chunk - create table
-                self.conn.execute(
-                    f"CREATE TABLE {table_name} AS SELECT * FROM chunk"
-                )
-            else:
-                # Subsequent chunks - append
-                self.conn.execute(
-                    f"INSERT INTO {table_name} SELECT * FROM chunk"
-                )
+            # Append to table (pandas handles creation on first write)
+            chunk.to_sql(
+                name=table_name,
+                con=self.engine,
+                schema=schema,
+                if_exists='append' if chunk_count > 1 else 'replace',
+                index=False,
+                method='multi',
+                chunksize=10000
+            )
 
-        print(f"\n✓ Successfully loaded {total_loaded:,} total rows into {table_name}")
+        self.conn.commit()
+        print(f"\n✓ Successfully loaded {total_loaded:,} total rows into {schema}.{table_name}")
 
-    def validate_data(self, table_name: str = "loans"):
+    def validate_data(self, table_name: str = "loans", schema: str = "raw"):
         """
         Run basic validation checks on loaded data
 
         Args:
             table_name: Name of table to validate
+            schema: Database schema (default: 'raw')
         """
         print("\n" + "=" * 50)
         print("Data Validation Results")
         print("=" * 50)
 
+        full_table_name = f"{schema}.{table_name}"
+
         # Total rows
         result = self.conn.execute(
-            f"SELECT COUNT(*) as total FROM {table_name}"
+            text(f"SELECT COUNT(*) as total FROM {full_table_name}")
         ).fetchone()
         total_rows = result[0]
         print(f"Total rows: {total_rows:,}")
@@ -119,7 +134,7 @@ class LoanDataLoader:
         key_columns = ['id', 'loan_amnt', 'loan_status', 'int_rate']
         for col in key_columns:
             result = self.conn.execute(
-                f"SELECT COUNT(*) FROM {table_name} WHERE {col} IS NOT NULL"
+                text(f"SELECT COUNT(*) FROM {full_table_name} WHERE {col} IS NOT NULL")
             ).fetchone()
             non_null = result[0]
             pct = (non_null / total_rows * 100) if total_rows > 0 else 0
@@ -128,13 +143,13 @@ class LoanDataLoader:
         # Loan status distribution
         print("\nLoan Status Distribution:")
         results = self.conn.execute(
-            f"""
+            text(f"""
             SELECT loan_status, COUNT(*) as count
-            FROM {table_name}
+            FROM {full_table_name}
             GROUP BY loan_status
             ORDER BY count DESC
             LIMIT 10
-            """
+            """)
         ).fetchall()
 
         for status, count in results:
@@ -154,21 +169,23 @@ class LoanDataLoader:
         ]
 
         # Count defaults
+        default_placeholders = ','.join([f"'{s}'" for s in default_statuses])
         default_count = self.conn.execute(
-            f"""
+            text(f"""
             SELECT COUNT(*)
-            FROM {table_name}
-            WHERE loan_status IN ({','.join([f"'{s}'" for s in default_statuses])})
-            """
+            FROM {full_table_name}
+            WHERE loan_status IN ({default_placeholders})
+            """)
         ).fetchone()[0]
 
         # Count paid
+        paid_placeholders = ','.join([f"'{s}'" for s in paid_statuses])
         paid_count = self.conn.execute(
-            f"""
+            text(f"""
             SELECT COUNT(*)
-            FROM {table_name}
-            WHERE loan_status IN ({','.join([f"'{s}'" for s in paid_statuses])})
-            """
+            FROM {full_table_name}
+            WHERE loan_status IN ({paid_placeholders})
+            """)
         ).fetchone()[0]
 
         completed_total = default_count + paid_count
@@ -185,7 +202,9 @@ class LoanDataLoader:
         self,
         source_table: str = "loans",
         sample_size: int = 10000,
-        target_table: str = "loans_sample"
+        target_table: str = "loans_sample",
+        source_schema: str = "raw",
+        target_schema: str = "raw"
     ):
         """
         Create a smaller sample dataset for testing
@@ -194,22 +213,31 @@ class LoanDataLoader:
             source_table: Source table name
             sample_size: Number of rows to sample
             target_table: Target table name for sample
+            source_schema: Source schema (default: 'raw')
+            target_schema: Target schema (default: 'raw')
         """
-        print(f"\nCreating sample dataset: {target_table}")
+        print(f"\nCreating sample dataset: {target_schema}.{target_table}")
 
-        self.conn.execute(f"DROP TABLE IF EXISTS {target_table}")
+        full_source = f"{source_schema}.{source_table}"
+        full_target = f"{target_schema}.{target_table}"
 
+        self.conn.execute(text(f"DROP TABLE IF EXISTS {full_target} CASCADE"))
+        self.conn.commit()
+
+        # PostgreSQL doesn't have USING SAMPLE, so we use ORDER BY RANDOM()
         self.conn.execute(
-            f"""
-            CREATE TABLE {target_table} AS
+            text(f"""
+            CREATE TABLE {full_target} AS
             SELECT *
-            FROM {source_table}
-            USING SAMPLE {sample_size} ROWS
-            """
+            FROM {full_source}
+            ORDER BY RANDOM()
+            LIMIT {sample_size}
+            """)
         )
+        self.conn.commit()
 
         count = self.conn.execute(
-            f"SELECT COUNT(*) FROM {target_table}"
+            text(f"SELECT COUNT(*) FROM {full_target}")
         ).fetchone()[0]
 
         print(f"✓ Created sample table with {count:,} rows")
@@ -218,14 +246,15 @@ class LoanDataLoader:
         """Close database connection"""
         if self.conn:
             self.conn.close()
-            print("\n✓ Database connection closed")
+        if self.engine:
+            self.engine.dispose()
+        print("\n✓ Database connection closed")
 
 
 def main():
     """Main execution function"""
     # Paths
     project_root = Path(__file__).parent.parent.parent
-    db_path = project_root / "data" / "loan_default.duckdb"
     csv_path = project_root / "data" / "raw" / "loan.csv"
 
     # Alternative common names for the CSV file
@@ -271,8 +300,8 @@ def main():
         print("=" * 70)
         sys.exit(1)
 
-    # Initialize loader
-    loader = LoanDataLoader(db_path=str(db_path))
+    # Initialize loader (uses DATABASE_URL from .env)
+    loader = LoanDataLoader()
 
     try:
         # Connect to database
@@ -282,11 +311,12 @@ def main():
         loader.load_csv_to_table(
             csv_path=str(found_csv),
             table_name="loans",
-            chunk_size=50000
+            chunk_size=50000,
+            schema="raw"
         )
 
         # Validate data
-        loader.validate_data(table_name="loans")
+        loader.validate_data(table_name="loans", schema="raw")
 
         # Create sample dataset (optional, for testing)
         print("\nWould you like to create a sample dataset for testing? (Y/n): ", end="")
@@ -296,7 +326,9 @@ def main():
             loader.create_sample_dataset(
                 source_table="loans",
                 sample_size=10000,
-                target_table="loans_sample"
+                target_table="loans_sample",
+                source_schema="raw",
+                target_schema="raw"
             )
 
     finally:

@@ -16,7 +16,8 @@ from datetime import datetime
 
 import pandas as pd
 import numpy as np
-import duckdb
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.linear_model import LogisticRegression
@@ -37,23 +38,29 @@ warnings.filterwarnings('ignore')
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+# Load environment variables
+load_dotenv()
+
 
 class LoanDefaultModelTrainer:
     """Handles training multiple models for loan default prediction"""
 
     def __init__(
         self,
-        db_path: str = "data/loan_default.duckdb",
+        database_url: str = None,
         output_dir: str = "outputs"
     ):
         """
         Initialize the model trainer
 
         Args:
-            db_path: Path to DuckDB database
+            database_url: PostgreSQL database URL (defaults to DATABASE_URL env var)
             output_dir: Directory to save models and metrics
         """
-        self.db_path = db_path
+        self.database_url = database_url or os.getenv(
+            'DATABASE_URL',
+            'postgresql://loan_user:loan_password@localhost:5432/loan_default'
+        )
         self.output_dir = Path(output_dir)
         self.models_dir = self.output_dir / "models"
         self.metrics_dir = self.output_dir / "metrics"
@@ -75,20 +82,22 @@ class LoanDefaultModelTrainer:
         self.models = {}
         self.results = {}
 
-    def load_data(self, table_name: str = "mart_ml_training"):
+    def load_data(self, table_name: str = "mart_ml_training", schema: str = "marts"):
         """
-        Load training data from DuckDB
+        Load training data from PostgreSQL
 
         Args:
             table_name: Name of the table containing ML training data
+            schema: Database schema (default: 'marts')
         """
-        print(f"Loading data from {table_name}...")
+        print(f"Loading data from {schema}.{table_name}...")
 
-        conn = duckdb.connect(self.db_path)
+        # Create database engine
+        engine = create_engine(self.database_url)
 
         # Load data
-        df = conn.execute(f"SELECT * FROM marts.{table_name}").df()
-        conn.close()
+        df = pd.read_sql(f"SELECT * FROM {schema}.{table_name}", engine)
+        engine.dispose()
 
         print(f"✓ Loaded {len(df):,} loans")
 
@@ -398,42 +407,42 @@ def main():
 
     # Paths
     project_root = Path(__file__).parent.parent.parent
-    db_path = project_root / "data" / "loan_default.duckdb"
 
-    # Check if database exists
-    if not db_path.exists():
-        print(f"\n❌ Database not found: {db_path}")
-        print("\nPlease run the data loader first:")
-        print("  python src/data/data_loader.py")
-        sys.exit(1)
-
-    # Initialize trainer
+    # Initialize trainer (uses DATABASE_URL from .env)
     trainer = LoanDefaultModelTrainer(
-        db_path=str(db_path),
         output_dir=str(project_root / "outputs")
     )
 
-    # Load data
-    df = trainer.load_data()
+    try:
+        # Load data
+        df = trainer.load_data()
 
-    # Prepare features
-    trainer.prepare_features(df)
+        # Prepare features
+        trainer.prepare_features(df)
 
-    # Train models
-    trainer.train_logistic_regression()
-    trainer.train_random_forest()
-    trainer.train_xgboost()
-    trainer.train_lightgbm()
+        # Train models
+        trainer.train_logistic_regression()
+        trainer.train_random_forest()
+        trainer.train_xgboost()
+        trainer.train_lightgbm()
 
-    # Evaluate models
-    results_df = trainer.evaluate_models()
+        # Evaluate models
+        results_df = trainer.evaluate_models()
 
-    # Save best model
-    trainer.save_best_model(results_df)
+        # Save best model
+        trainer.save_best_model(results_df)
 
-    print("\n" + "=" * 60)
-    print("✓ Training Complete!")
-    print("=" * 60)
+        print("\n" + "=" * 60)
+        print("✓ Training Complete!")
+        print("=" * 60)
+
+    except Exception as e:
+        print(f"\n❌ Error during training: {e}")
+        print("\nPlease ensure:")
+        print("  1. PostgreSQL is running (docker-compose up -d)")
+        print("  2. Data has been loaded (python src/data/data_loader.py)")
+        print("  3. dbt models have been run (cd dbt_project && dbt run)")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
